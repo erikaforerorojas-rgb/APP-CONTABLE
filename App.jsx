@@ -206,6 +206,7 @@ const initialData = {
   ],
   expenses: [],
   sales: [],
+  credits: [],
 };
 
 function today() {
@@ -260,6 +261,10 @@ export default function App() {
   const [saleClientId, setSaleClientId] = useState("1");
   const [saleItems, setSaleItems] = useState([{ productId: "1", quantity: 1 }]);
   const [salePayment, setSalePayment] = useState("Efectivo");
+  const [isCredit, setIsCredit] = useState(false);
+  const [initialPayment, setInitialPayment] = useState("");
+  const [installments, setInstallments] = useState("6");
+  const [paymentForm, setPaymentForm] = useState({ creditId: "", amount: "", date: today() });
 
   useEffect(() => {
     const saved = loadData();
@@ -392,7 +397,7 @@ export default function App() {
       id: uid(),
       number: `${data.business.invoicePrefix}-${String(data.sales.length + 1).padStart(4, "0")}`,
       client: client.name,
-      paymentMethod: salePayment,
+      paymentMethod: isCredit ? "Crédito" : salePayment,
       date: today(),
       items: salePreview.items,
       total: salePreview.total,
@@ -400,9 +405,31 @@ export default function App() {
       profit: salePreview.profit,
     };
 
+    const initialPay = Math.max(0, Number(initialPayment || 0));
+    const creditBalance = Math.max(0, salePreview.total - initialPay);
+    const creditInstallments = Math.max(1, Number(installments || 1));
+
+    const credit = isCredit
+      ? {
+          id: uid(),
+          saleId: sale.id,
+          number: sale.number,
+          client: client.name,
+          date: today(),
+          total: salePreview.total,
+          initialPayment: initialPay,
+          balance: creditBalance,
+          installments: creditInstallments,
+          installmentValue: Math.ceil(creditBalance / creditInstallments),
+          payments: initialPay > 0 ? [{ id: uid(), amount: initialPay, date: today(), note: "Abono inicial" }] : [],
+          status: creditBalance <= 0 ? "Pagado" : "Pendiente",
+        }
+      : null;
+
     setData((prev) => ({
       ...prev,
       sales: [sale, ...prev.sales],
+      credits: credit ? [credit, ...(prev.credits || [])] : prev.credits || [],
       products: prev.products.map((product) => {
         const sold = salePreview.items.find((item) => item.productId === product.id);
         return sold ? { ...product, stock: product.stock - sold.quantity } : product;
@@ -410,7 +437,35 @@ export default function App() {
     }));
 
     setSaleItems([{ productId: String(data.products[0]?.id || ""), quantity: 1 }]);
+    setIsCredit(false);
+    setInitialPayment("");
+    setInstallments("6");
     alert("Venta registrada correctamente");
+  };
+
+  const registerCreditPayment = () => {
+    const amount = Number(paymentForm.amount || 0);
+    if (!paymentForm.creditId || amount <= 0) return;
+
+    setData((prev) => ({
+      ...prev,
+      credits: (prev.credits || []).map((credit) => {
+        if (String(credit.id) !== String(paymentForm.creditId)) return credit;
+
+        const newBalance = Math.max(0, Number(credit.balance || 0) - amount);
+        const newPayment = { id: uid(), amount, date: paymentForm.date, note: "Pago de cuota" };
+
+        return {
+          ...credit,
+          balance: newBalance,
+          payments: [newPayment, ...(credit.payments || [])],
+          status: newBalance <= 0 ? "Pagado" : "Pendiente",
+        };
+      }),
+    }));
+
+    setPaymentForm({ creditId: "", amount: "", date: today() });
+    alert("Pago registrado correctamente");
   };
 
   const exportBackup = () => {
@@ -526,13 +581,46 @@ export default function App() {
             </select>
           </Field>
           <Field label="Pago">
-            <select style={styles.input} value={salePayment} onChange={(e) => setSalePayment(e.target.value)}>
+            <select style={styles.input} value={salePayment} onChange={(e) => setSalePayment(e.target.value)} disabled={isCredit}>
               <option>Efectivo</option>
               <option>Transferencia</option>
               <option>Tarjeta</option>
               <option>Nequi</option>
             </select>
           </Field>
+          <Field label="¿Venta a crédito?">
+            <select
+              style={styles.input}
+              value={isCredit ? "Si" : "No"}
+              onChange={(e) => setIsCredit(e.target.value === "Si")}
+            >
+              <option>No</option>
+              <option>Si</option>
+            </select>
+          </Field>
+          {isCredit && (
+            <>
+              <Field label="Abono inicial">
+                <input
+                  style={styles.input}
+                  type="number"
+                  min="0"
+                  max={salePreview.total}
+                  value={initialPayment}
+                  onChange={(e) => setInitialPayment(e.target.value)}
+                />
+              </Field>
+              <Field label="Número de cuotas">
+                <input
+                  style={styles.input}
+                  type="number"
+                  min="1"
+                  value={installments}
+                  onChange={(e) => setInstallments(e.target.value)}
+                />
+              </Field>
+            </>
+          )}
         </div>
 
         <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
@@ -575,6 +663,23 @@ export default function App() {
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span>Total</span><strong>{currency.format(salePreview.total)}</strong></div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span>Costo</span><strong>{currency.format(salePreview.totalCost)}</strong></div>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Ganancia</span><strong>{currency.format(salePreview.profit)}</strong></div>
+          {isCredit && (
+            <>
+              <hr style={{ border: 0, borderTop: "1px solid #e5e7eb", margin: "12px 0" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span>Abono inicial</span>
+                <strong>{currency.format(Number(initialPayment || 0))}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span>Saldo a crédito</span>
+                <strong>{currency.format(Math.max(0, salePreview.total - Number(initialPayment || 0)))}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Valor por cuota</span>
+                <strong>{currency.format(Math.ceil(Math.max(0, salePreview.total - Number(initialPayment || 0)) / Math.max(1, Number(installments || 1))))}</strong>
+              </div>
+            </>
+          )}
         </div>
 
         <div style={{ marginTop: 18 }}>
@@ -585,6 +690,7 @@ export default function App() {
                 <div>
                   <strong>{sale.number}</strong>
                   <div style={{ color: "#6b7280", marginTop: 6 }}>{sale.client} · {sale.date}</div>
+                  <div style={{ color: "#6b7280", marginTop: 6 }}>Pago: {sale.paymentMethod}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <strong>{currency.format(sale.total)}</strong>
@@ -682,6 +788,110 @@ export default function App() {
     </div>
   );
 
+  const renderCredits = () => {
+    const credits = data.credits || [];
+    const pendingCredits = credits.filter((credit) => credit.status !== "Pagado");
+    const paidCredits = credits.filter((credit) => credit.status === "Pagado");
+    const totalPending = pendingCredits.reduce((sum, credit) => sum + Number(credit.balance || 0), 0);
+
+    return (
+      <div style={{ display: "grid", gap: 18 }}>
+        <div style={styles.statsGrid}>
+          <Stat label="Saldo por cobrar" value={currency.format(totalPending)} helper={`${pendingCredits.length} créditos pendientes`} />
+          <Stat label="Créditos pagados" value={paidCredits.length} helper="Clientes sin saldo pendiente" />
+          <Stat label="Total créditos" value={credits.length} helper="Ventas financiadas registradas" />
+        </div>
+
+        <div style={styles.gridTwo}>
+          <div style={styles.card}>
+            <h3 style={styles.sectionTitle}>Registrar pago</h3>
+            <p style={styles.sectionText}>Abona cuotas a un crédito y actualiza el saldo automáticamente.</p>
+            <div style={styles.gridThree}>
+              <Field label="Crédito">
+                <select
+                  style={styles.input}
+                  value={paymentForm.creditId}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, creditId: e.target.value })}
+                >
+                  <option value="">Seleccionar crédito</option>
+                  {pendingCredits.map((credit) => (
+                    <option key={credit.id} value={credit.id}>
+                      {credit.number} - {credit.client} - {currency.format(credit.balance)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Valor del pago">
+                <input
+                  style={styles.input}
+                  type="number"
+                  min="1"
+                  value={paymentForm.amount}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                />
+              </Field>
+              <Field label="Fecha">
+                <input
+                  style={styles.input}
+                  type="date"
+                  value={paymentForm.date}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                />
+              </Field>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <button style={styles.button} onClick={registerCreditPayment}>Guardar pago</button>
+            </div>
+          </div>
+
+          <div style={styles.card}>
+            <h3 style={styles.sectionTitle}>Lista de créditos</h3>
+            <p style={styles.sectionText}>Consulta cuotas, saldos y pagos realizados.</p>
+
+            {credits.length ? credits.map((credit) => (
+              <div key={credit.id} style={{ ...styles.invoiceBox, marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <strong>{credit.number}</strong>
+                    <div style={{ color: "#6b7280", marginTop: 6 }}>{credit.client} · {credit.date}</div>
+                    <div style={{ color: "#6b7280", marginTop: 6 }}>
+                      Total: {currency.format(credit.total)} · Abono inicial: {currency.format(credit.initialPayment || 0)}
+                    </div>
+                    <div style={{ color: "#6b7280", marginTop: 6 }}>
+                      {credit.installments} cuotas de {currency.format(credit.installmentValue || 0)}
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: "right" }}>
+                    <strong>{currency.format(credit.balance || 0)}</strong>
+                    <div style={{ color: "#6b7280", marginTop: 6 }}>Saldo pendiente</div>
+                    <span style={{ ...styles.badge, ...(credit.status === "Pagado" ? styles.badgeOk : styles.badgeWarn), marginTop: 8 }}>
+                      {credit.status}
+                    </span>
+                  </div>
+                </div>
+
+                {(credit.payments || []).length ? (
+                  <div style={{ marginTop: 12 }}>
+                    <strong>Pagos</strong>
+                    {(credit.payments || []).map((payment) => (
+                      <div key={payment.id} style={{ display: "flex", justifyContent: "space-between", marginTop: 6, color: "#6b7280" }}>
+                        <span>{payment.date} · {payment.note}</span>
+                        <strong>{currency.format(payment.amount)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )) : (
+              <div style={styles.invoiceBox}>Todavía no hay créditos registrados.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={styles.app}>
       <div style={styles.container}>
@@ -703,6 +913,7 @@ export default function App() {
             ["sales", "Ventas"],
             ["expenses", "Gastos"],
             ["people", "Clientes y proveedores"],
+            ["credits", "Créditos"],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -719,6 +930,7 @@ export default function App() {
         {tab === "sales" && renderSales()}
         {tab === "expenses" && renderExpenses()}
         {tab === "people" && renderPeople()}
+        {tab === "credits" && renderCredits()}
       </div>
     </div>
   );
