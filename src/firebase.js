@@ -1,18 +1,8 @@
-import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-
-// 🔴 PEGA AQUÍ TU CONFIGURACIÓN DE FIREBASE
 const firebaseConfig = {
-  apiKey: "AQUI_TU_API_KEY",
-  authDomain: "AQUI_TU_AUTH_DOMAIN",
+  apiKey: "AIzaSy...",
+  authDomain: "creditos-daza.firebaseapp.com",
   projectId: "creditos-daza",
-  storageBucket: "AQUI_TU_STORAGE_BUCKET",
-  messagingSenderId: "AQUI_TU_SENDER_ID",
-  appId: "AQUI_TU_APP_ID"
+  storageBucket: "creditos-daza.firebasestorage.app",
+  messagingSenderId: "952632228062",
+  appId: "1:952632228062:web:..."
 };
-
-// Inicializar Firebase
-const app = initializeApp(firebaseConfig);
-
-// Base de datos (Firestore)
-export const db = getFirestore(app);
